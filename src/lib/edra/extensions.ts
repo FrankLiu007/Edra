@@ -11,8 +11,96 @@ import SuperScript from '@tiptap/extension-superscript';
 import { ColorHighlighter, Table, TableCell, TableHeader, TableRow } from './tiptap/index.ts';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Markdown } from '@tiptap/markdown';
-import Mathematics from '@tiptap/extension-mathematics';
+import { BlockMath, InlineMath } from '@tiptap/extension-mathematics';
+import katex from 'katex';
 import { Audio } from './tiptap/index.ts';
+
+/** 解析/渲染前解码 data-latex 中的 HTML 实体（如 &amp;），否则 KaTeX 渲染 align 等会报错 */
+function decodeLatexFromHtml(v: string | null | undefined): string {
+	if (v == null || v === '') return '';
+	return v
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'");
+}
+
+const latexAttr = {
+	default: '',
+	parseHTML: (element: HTMLElement) => decodeLatexFromHtml(element.getAttribute('data-latex')) || '',
+	renderHTML: (attributes: { latex?: string }) => ({ 'data-latex': attributes.latex })
+};
+
+const katexOptions = {
+	throwOnError: true,
+	macros: {
+		'\\R': '\\mathbb{R}',
+		'\\N': '\\mathbb{N}'
+	}
+};
+
+const BlockMathWithDecode = BlockMath.extend({
+	addAttributes() {
+		const parent = this.parent?.() ?? {};
+		return {
+			...parent,
+			latex: latexAttr
+		};
+	},
+	addNodeView() {
+		return ({ node, getPos }) => {
+			const wrapper = document.createElement('div');
+			const innerWrapper = document.createElement('div');
+			wrapper.className = 'tiptap-mathematics-render';
+			if (this.editor.isEditable) {
+				wrapper.classList.add('tiptap-mathematics-render--editable');
+			}
+			innerWrapper.className = 'block-math-inner';
+			const rawLatex = node.attrs.latex ?? '';
+			const latex = decodeLatexFromHtml(rawLatex);
+			wrapper.dataset.type = 'block-math';
+			wrapper.setAttribute('data-latex', rawLatex);
+			wrapper.appendChild(innerWrapper);
+			const renderMath = () => {
+				try {
+					katex.render(latex, innerWrapper, { displayMode: true, ...this.options.katexOptions });
+					wrapper.classList.remove('block-math-error');
+				} catch {
+					wrapper.textContent = latex || rawLatex;
+					wrapper.classList.add('block-math-error');
+				}
+			};
+			const handleClick = (event: Event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				const pos = getPos();
+				if (pos == null) return;
+				if (this.options.onClick) this.options.onClick(node, pos);
+			};
+			if (this.options.onClick) {
+				wrapper.addEventListener('click', handleClick);
+			}
+			renderMath();
+			return {
+				dom: wrapper,
+				destroy() {
+					wrapper.removeEventListener('click', handleClick);
+				}
+			};
+		};
+	}
+});
+
+const InlineMathWithDecode = InlineMath.extend({
+	addAttributes() {
+		const parent = this.parent?.() ?? {};
+		return {
+			...parent,
+			latex: latexAttr
+		};
+	}
+});
 
 /**
  * Contains all the default extensions the editor uses.
@@ -82,14 +170,6 @@ export default [
 	TableRow,
 	TableCell,
 	Markdown,
-	Mathematics.configure({
-		// Options for the KaTeX renderer. See here: https://katex.org/docs/options.html
-		katexOptions: {
-			throwOnError: true, // don't throw an error if the LaTeX code is invalid
-			macros: {
-				'\\R': '\\mathbb{R}', // add a macro for the real numbers
-				'\\N': '\\mathbb{N}' // add a macro for the natural numbers
-			}
-		}
-	})
+	BlockMathWithDecode.configure({ katexOptions }),
+	InlineMathWithDecode.configure({ katexOptions })
 ] as Extensions;

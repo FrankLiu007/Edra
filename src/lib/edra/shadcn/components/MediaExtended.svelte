@@ -239,10 +239,19 @@
 					<DropdownMenu.Content align="start" class="mt-1 overflow-auto text-sm">
 						<DropdownMenu.Item
 							onclick={() => {
-								if (node.attrs.title === null || node.attrs.title.trim() === '')
+								if (node.attrs.title === null || node.attrs.title.trim() === '') {
+									const defaultCaptions: Record<string, string> = {
+										audio: 'Audio Caption',
+										image: 'Image Caption',
+										video: 'Video Caption',
+										iframe: 'Caption'
+									};
 									updateAttributes({
-										title: strings.extension.media.captionPlaceholder
+										title:
+											defaultCaptions[node.type.name] ||
+											strings.extension.media.captionPlaceholder
 									});
+								}
 							}}
 						>
 							<Captions />
