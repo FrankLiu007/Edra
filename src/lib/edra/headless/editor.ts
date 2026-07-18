@@ -7,10 +7,16 @@ import {
 	SlashCommand,
 	SvelteNodeViewRenderer,
 	useEditor,
-	VideoExtended
+	VideoExtended,
+	type Editor
 } from '../tiptap/index.ts';
 import { all, createLowlight } from 'lowlight';
-import extensions from '../extensions.ts';
+import {
+	baseExtensions,
+	BlockMathWithDecode,
+	InlineMathWithDecode,
+	katexOptions
+} from '../extensions.ts';
 const lowlight = createLowlight(all);
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import CodeBlock from './components/CodeBlock.svelte';
@@ -22,6 +28,17 @@ import IFrameComp from './components/IFrame.svelte';
 import MermaidComp from './components/Mermaid.svelte';
 import SlashCommandComp from './components/SlashCommand.svelte';
 import CalloutComp from './components/Callout.svelte';
+import type { EditorView } from '@tiptap/pm/view';
+import type { Node } from '@tiptap/pm/model';
+
+export type MathClickHandler = (
+	node: Node,
+	pos: number,
+	isBlock: boolean,
+	editor: Editor
+) => void;
+
+export type HandlePaste = (view: EditorView, event: ClipboardEvent) => boolean;
 
 export interface EdraEditorProps {
 	onUpdate?: () => void;
@@ -40,12 +57,39 @@ export interface EdraEditorProps {
 		onChunk: (chunk: string) => void,
 		onError: (error: Error) => void
 	) => Promise<void>;
+	/** Math node click → host UI (e.g. MathLive). */
+	onMathClick?: MathClickHandler;
+	/**
+	 * Custom paste handler (e.g. smart paste). Return true to consume the event.
+	 */
+	handlePaste?: HandlePaste;
 }
 
-export const createEditor = (props?: EdraEditorProps) =>
-	useEditor({
+export const createEditor = (props?: EdraEditorProps) => {
+	let editorRef: Editor | undefined;
+
+	const onMathClick = props?.onMathClick;
+	const handlePaste = props?.handlePaste;
+
+	const editor = useEditor({
 		extensions: [
-			...extensions,
+			...baseExtensions,
+			BlockMathWithDecode.configure({
+				katexOptions,
+				onClick: onMathClick
+					? (node, pos) => {
+							if (editorRef) onMathClick(node, pos, true, editorRef);
+						}
+					: undefined
+			}),
+			InlineMathWithDecode.configure({
+				katexOptions,
+				onClick: onMathClick
+					? (node, pos) => {
+							if (editorRef) onMathClick(node, pos, false, editorRef);
+						}
+					: undefined
+			}),
 			CodeBlockLowlight.configure({
 				lowlight
 			}).extend({
@@ -66,5 +110,14 @@ export const createEditor = (props?: EdraEditorProps) =>
 				callAI: props?.callAI || null
 			})
 		],
-		onUpdate: props?.onUpdate || (() => {})
+		onUpdate: props?.onUpdate || (() => {}),
+		editorProps: handlePaste
+			? {
+					handlePaste: (view, event) => handlePaste(view, event)
+				}
+			: undefined
 	});
+
+	editorRef = editor;
+	return editor;
+};

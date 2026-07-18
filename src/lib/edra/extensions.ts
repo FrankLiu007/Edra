@@ -40,7 +40,7 @@ const katexOptions = {
 	}
 };
 
-const BlockMathWithDecode = BlockMath.extend({
+export const BlockMathWithDecode = BlockMath.extend({
 	addAttributes() {
 		const parent = this.parent?.() ?? {};
 		return {
@@ -92,7 +92,7 @@ const BlockMathWithDecode = BlockMath.extend({
 	}
 });
 
-const InlineMathWithDecode = InlineMath.extend({
+export const InlineMathWithDecode = InlineMath.extend({
 	addAttributes() {
 		const parent = this.parent?.() ?? {};
 		return {
@@ -102,10 +102,12 @@ const InlineMathWithDecode = InlineMath.extend({
 	}
 });
 
+export { katexOptions };
+
 /**
- * Contains all the default extensions the editor uses.
+ * Base extensions without math nodes (math is wired in createEditor so onClick can be injected).
  */
-export default [
+export const baseExtensions = [
 	StarterKit.configure({
 		orderedList: {
 			HTMLAttributes: {
@@ -169,7 +171,14 @@ export default [
 	TableHeader,
 	TableRow,
 	TableCell,
-	Markdown,
+	Markdown
+] as Extensions;
+
+/**
+ * Contains all the default extensions the editor uses.
+ */
+export default [
+	...baseExtensions,
 	BlockMathWithDecode.configure({ katexOptions }),
 	InlineMathWithDecode.configure({ katexOptions })
 ] as Extensions;
