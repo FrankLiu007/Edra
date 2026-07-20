@@ -46,12 +46,15 @@ export interface EdraEditorProps {
 	 * Callback function to handle file uploads when a user drags/drops, pastes,
 	 * or selects a media file (image, video, audio) to insert.
 	 * It should upload the file to your storage (e.g., S3, Vercel Blob, etc.)
-	 * and return a promise resolving to the public URL of the uploaded file.
+	 * and return a promise resolving to the public URL, or an attrs object
+	 * with at least `src` (e.g. `{ src, 'data-image-id': id }`).
 	 *
 	 * @param file The file to be uploaded.
-	 * @returns A promise resolving to the uploaded file's URL.
+	 * @returns A promise resolving to the uploaded file's URL or image attrs.
 	 */
-	onFileUpload?: (file: File) => Promise<string>;
+	onFileUpload?: (
+		file: File
+	) => Promise<string | ({ src: string } & Record<string, unknown>)>;
 	callAI?: (
 		prompt: string,
 		onChunk: (chunk: string) => void,
@@ -111,11 +114,15 @@ export const createEditor = (props?: EdraEditorProps) => {
 			})
 		],
 		onUpdate: props?.onUpdate || (() => {}),
-		editorProps: handlePaste
+		// Do not pass editorProps: undefined — it overwrites TipTap's default {}
+		// and crashes createView on editorProps.dispatchTransaction.
+		...(handlePaste
 			? {
-					handlePaste: (view, event) => handlePaste(view, event)
+					editorProps: {
+						handlePaste: (view, event) => handlePaste(view, event)
+					}
 				}
-			: undefined
+			: {})
 	});
 
 	editorRef = editor;

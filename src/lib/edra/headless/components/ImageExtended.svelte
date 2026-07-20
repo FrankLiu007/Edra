@@ -30,9 +30,13 @@
 
 <style>
 	.img-custom {
+		display: block;
 		margin: 0;
 		width: 100%;
-		border-radius: var(--edra-radius-md);
-		object-fit: cover;
+		height: auto;
+		border-radius: var(--edra-radius-md, 6px);
+		object-fit: contain;
+		pointer-events: none;
+		user-select: none;
 	}
 </style>

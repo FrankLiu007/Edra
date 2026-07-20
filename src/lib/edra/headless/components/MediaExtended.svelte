@@ -10,15 +10,27 @@
 	import Fullscreen from '@lucide/svelte/icons/fullscreen';
 	import Trash from '@lucide/svelte/icons/trash-2';
 	import type { NodeViewProps } from '@tiptap/core';
+	import { NodeSelection } from '@tiptap/pm/state';
 	import { onDestroy, onMount, type Snippet } from 'svelte';
 	import { duplicateContent } from '../../utils.js';
 	import strings from '../../strings.js';
 	import { NodeViewWrapper } from '$lib/edra/tiptap/index.js';
+	import {
+		ATOM_SLIGHT_PENETRATION_PX,
+		atomPenetrationDepth,
+		entrySideFromSelection,
+		includeAtomInDragSelection,
+		resolveAtomLeave,
+		type AtomVerticalSide
+	} from '../../tiptap/extensions/SelectAcrossAtoms.js';
 
 	interface MediaExtendedProps extends NodeViewProps {
 		children: Snippet<[]>;
 		mediaRef?: HTMLElement;
 	}
+
+	type ResizeSide = 'left' | 'right';
+	type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
 	const {
 		node,
@@ -26,6 +38,7 @@
 		selected,
 		deleteNode,
 		updateAttributes,
+		getPos,
 		children,
 		mediaRef = $bindable()
 	}: MediaExtendedProps = $props();
@@ -33,93 +46,214 @@
 	const minWidthPercent = 20;
 	const maxWidthPercent = 100;
 
-	let nodeRef = $state<HTMLElement>();
+	const corners: { id: Corner; side: ResizeSide }[] = [
+		{ id: 'top-left', side: 'left' },
+		{ id: 'top-right', side: 'right' },
+		{ id: 'bottom-left', side: 'left' },
+		{ id: 'bottom-right', side: 'right' }
+	];
 
+	let nodeRef = $state<HTMLElement | undefined>();
 	let resizing = $state(false);
-	let resizingInitialWidthPercent = $state(0);
+	/** 拖动开始时编辑器内容区宽度（固定，避免随图片变窄导致百分比非线性） */
+	let resizingContainerWidth = $state(0);
+	let resizingInitialWidthPx = $state(0);
 	let resizingInitialMouseX = $state(0);
-	let resizingPosition = $state<'left' | 'right'>('left');
+	let resizingPosition = $state<ResizeSide>('right');
 	let openedMore = $state(false);
 
-	function handleResizingPosition(e: MouseEvent, position: 'left' | 'right') {
-		startResize(e);
-		resizingPosition = position;
+	/** 拖选访问状态：真正进入后并入；离开时按同侧/对侧决定是否保留 */
+	let dragActive = false;
+	let dragMaxPenetration = 0;
+	let dragIncluded = false;
+	let dragEntrySide: AtomVerticalSide | null = null;
+	let dragSavedAnchor = 0;
+
+	/** 仅点击选中该节点时显示缩放/工具栏；框选包含时只显示边框 */
+	const isNodeOnlySelection = $derived.by(() => {
+		void selected;
+		const pos = getPos();
+		if (typeof pos !== 'number') return false;
+		const sel = editor.state.selection;
+		return sel instanceof NodeSelection && sel.from === pos;
+	});
+	const showControls = $derived(isNodeOnlySelection || openedMore || resizing);
+
+	function ensureNodeSelected() {
+		const pos = getPos();
+		if (typeof pos === 'number') {
+			editor.chain().setNodeSelection(pos).run();
+		}
 	}
 
-	function startResize(e: MouseEvent) {
+	function resetDragVisit() {
+		dragActive = false;
+		dragMaxPenetration = 0;
+		dragIncluded = false;
+		dragEntrySide = null;
+		dragSavedAnchor = 0;
+	}
+
+	function isDragSelecting(e: MouseEvent | PointerEvent): boolean {
+		return editor.isEditable && !resizing && e.buttons === 1;
+	}
+
+	function updateDragPenetration(e: MouseEvent | PointerEvent) {
+		const el = nodeRef;
+		if (!el) return;
+		const pen = atomPenetrationDepth(e.clientX, e.clientY, el.getBoundingClientRect());
+		dragMaxPenetration = Math.max(dragMaxPenetration, pen);
+	}
+
+	/**
+	 * 拖选进入媒体：穿透够深后立刻把图片并入选区。
+	 * 记录进入侧与进入前 anchor，供离开时判断保留/排除。
+	 */
+	function onDragEnterMedia(e: MouseEvent | PointerEvent) {
+		if (!isDragSelecting(e)) return;
+
+		const pos = getPos();
+		if (typeof pos !== 'number') return;
+
+		const sel = editor.state.selection;
+		const nodeStart = pos;
+		const nodeEnd = pos + node.nodeSize;
+
+		if (sel instanceof NodeSelection && sel.from === nodeStart) return;
+		if (sel.empty) return;
+
+		if (!dragActive) {
+			const side = entrySideFromSelection(sel, nodeStart, nodeEnd);
+			dragActive = true;
+			dragSavedAnchor = sel.anchor;
+			dragEntrySide = side;
+			dragIncluded = sel.from <= nodeStart && sel.to >= nodeEnd;
+		}
+
+		updateDragPenetration(e);
+		tryIncludeAfterPenetration(nodeStart, nodeEnd);
+
+		if (editor.state.selection.from <= nodeStart && editor.state.selection.to >= nodeEnd) {
+			e.stopPropagation();
+		}
+	}
+
+	function tryIncludeAfterPenetration(nodeStart: number, nodeEnd: number) {
+		if (dragIncluded || !dragEntrySide) return;
+		if (dragMaxPenetration < ATOM_SLIGHT_PENETRATION_PX) return;
+		includeAtomInDragSelection(editor.view, nodeStart, nodeEnd);
+		dragIncluded = true;
+	}
+
+	function onDragMoveMedia(e: MouseEvent | PointerEvent) {
+		if (!isDragSelecting(e)) return;
+		if (!dragActive) {
+			onDragEnterMedia(e);
+			return;
+		}
+
+		const pos = getPos();
+		if (typeof pos !== 'number') return;
+
+		updateDragPenetration(e);
+		tryIncludeAfterPenetration(pos, pos + node.nodeSize);
+
+		const sel = editor.state.selection;
+		if (sel.from <= pos && sel.to >= pos + node.nodeSize) {
+			e.stopPropagation();
+		}
+	}
+
+	/**
+	 * 拖选离开媒体：
+	 * - 同侧离开（误入后返回）→ 选区不应包含图片
+	 * - 对侧离开（穿过图片）→ 选区应包含图片
+	 */
+	function onDragLeaveMedia(e: MouseEvent | PointerEvent) {
+		if (!dragActive) return;
+
+		const related = e.relatedTarget;
+		if (related instanceof Node && nodeRef?.contains(related)) return;
+
+		const pos = getPos();
+		const entrySide = dragEntrySide;
+		const savedAnchor = dragSavedAnchor;
+		const included = dragIncluded;
+		const el = nodeRef;
+		resetDragVisit();
+
+		if (!isDragSelecting(e) || typeof pos !== 'number' || !entrySide || !el) return;
+
+		resolveAtomLeave(editor.view, {
+			nodeStart: pos,
+			nodeEnd: pos + node.nodeSize,
+			entrySide,
+			savedAnchor,
+			included,
+			clientX: e.clientX,
+			clientY: e.clientY,
+			rect: el.getBoundingClientRect()
+		});
+	}
+
+	/** 百分比宽度相对的是编辑器内容区，不是图片自身容器 */
+	function getResizeContainerWidth(): number {
+		const editorWidth = editor.view.dom.clientWidth;
+		if (editorWidth > 0) return editorWidth;
+		const outer = nodeRef?.parentElement?.parentElement;
+		return outer?.clientWidth || nodeRef?.parentElement?.clientWidth || 1;
+	}
+
+	function startResize(e: MouseEvent | TouchEvent, side: ResizeSide) {
 		e.preventDefault();
+		e.stopPropagation();
+		ensureNodeSelected();
 		resizing = true;
-		resizingInitialMouseX = e.clientX;
-		if (mediaRef && nodeRef?.parentElement) {
-			const currentWidth = mediaRef.offsetWidth;
-			const parentWidth = nodeRef.parentElement.offsetWidth;
-			resizingInitialWidthPercent = (currentWidth / parentWidth) * 100;
-		}
+		resizingPosition = side;
+		const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+		resizingInitialMouseX = clientX;
+		resizingContainerWidth = getResizeContainerWidth();
+		resizingInitialWidthPx = mediaRef?.offsetWidth || nodeRef?.offsetWidth || 0;
 	}
 
-	function resize(e: MouseEvent) {
-		if (!resizing || !nodeRef?.parentElement) return;
-		let dx = e.clientX - resizingInitialMouseX;
+	function applyWidthDelta(clientX: number) {
+		if (!resizing || resizingContainerWidth <= 0) return;
+		let dx = clientX - resizingInitialMouseX;
 		if (resizingPosition === 'left') {
-			dx = resizingInitialMouseX - e.clientX;
+			dx = resizingInitialMouseX - clientX;
 		}
-		const parentWidth = nodeRef.parentElement.offsetWidth;
-		const deltaPercent = (dx / parentWidth) * 100;
+		const newWidthPx = resizingInitialWidthPx + dx;
 		const newWidthPercent = Math.max(
-			Math.min(resizingInitialWidthPercent + deltaPercent, maxWidthPercent),
+			Math.min((newWidthPx / resizingContainerWidth) * 100, maxWidthPercent),
 			minWidthPercent
 		);
 		updateAttributes({ width: `${newWidthPercent}%` });
+	}
+
+	function resize(e: MouseEvent) {
+		applyWidthDelta(e.clientX);
 	}
 
 	function endResize() {
 		resizing = false;
 		resizingInitialMouseX = 0;
-		resizingInitialWidthPercent = 0;
-	}
-
-	function handleTouchStart(e: TouchEvent, position: 'left' | 'right') {
-		e.preventDefault();
-		resizing = true;
-		resizingPosition = position;
-		resizingInitialMouseX = e.touches[0].clientX;
-		if (mediaRef && nodeRef?.parentElement) {
-			const currentWidth = mediaRef.offsetWidth;
-			const parentWidth = nodeRef.parentElement.offsetWidth;
-			resizingInitialWidthPercent = (currentWidth / parentWidth) * 100;
-		}
+		resizingInitialWidthPx = 0;
+		resizingContainerWidth = 0;
 	}
 
 	function handleTouchMove(e: TouchEvent) {
-		if (!resizing || !nodeRef?.parentElement) return;
-		let dx = e.touches[0].clientX - resizingInitialMouseX;
-		if (resizingPosition === 'left') {
-			dx = resizingInitialMouseX - e.touches[0].clientX;
-		}
-		const parentWidth = nodeRef.parentElement.offsetWidth;
-		const deltaPercent = (dx / parentWidth) * 100;
-		const newWidthPercent = Math.max(
-			Math.min(resizingInitialWidthPercent + deltaPercent, maxWidthPercent),
-			minWidthPercent
-		);
-		updateAttributes({ width: `${newWidthPercent}%` });
+		if (!resizing) return;
+		applyWidthDelta(e.touches[0].clientX);
 	}
 
 	function handleTouchEnd() {
-		resizing = false;
-		resizingInitialMouseX = 0;
-		resizingInitialWidthPercent = 0;
+		endResize();
 	}
 
 	onMount(() => {
-		// Attach id to nodeRef
-		nodeRef = document.getElementById('resizable-container-media') as HTMLDivElement;
-
-		// Mouse events
 		window.addEventListener('mousemove', resize);
 		window.addEventListener('mouseup', endResize);
-		// Touch events
-		window.addEventListener('touchmove', handleTouchMove);
+		window.addEventListener('touchmove', handleTouchMove, { passive: false });
 		window.addEventListener('touchend', handleTouchEnd);
 	});
 
@@ -132,17 +266,26 @@
 </script>
 
 <NodeViewWrapper
-	id="resizable-container-media"
 	class={cn(
-		'media-extended-wrapper',
-		selected && 'selected',
+		'media-extended-outer',
 		node.attrs.align === 'left' && 'align-left',
 		node.attrs.align === 'center' && 'align-center',
 		node.attrs.align === 'right' && 'align-right'
 	)}
 	style={`width: ${node.attrs.width}`}
 >
-	<div class="media-group">
+	<div
+		bind:this={nodeRef}
+		class="media-group"
+		class:selected={selected || resizing}
+		class:resizing
+		onmouseenter={onDragEnterMedia}
+		onmousemove={onDragMoveMedia}
+		onmouseleave={onDragLeaveMedia}
+		onpointerenter={onDragEnterMedia}
+		onpointermove={onDragMoveMedia}
+		onpointerleave={onDragLeaveMedia}
+	>
 		{@render children()}
 		{#if node.attrs.title !== null && node.attrs.title.trim() !== ''}
 			<input
@@ -155,36 +298,25 @@
 				}}
 			/>
 		{/if}
-		{#if editor.isEditable}
-			<div
-				role="button"
-				tabindex="0"
-				aria-label={strings.extension.media.back}
-				class="resize-handle resize-handle-left"
-				onmousedown={(event: MouseEvent) => {
-					handleResizingPosition(event, 'left');
-				}}
-				ontouchstart={(event: TouchEvent) => {
-					handleTouchStart(event, 'left');
-				}}
-			>
-				<div class="resize-bar"></div>
-			</div>
+		{#if editor.isEditable && showControls}
+			{#each corners as corner (corner.id)}
+				<button
+					type="button"
+					class="resize-corner"
+					class:resize-corner-top-left={corner.id === 'top-left'}
+					class:resize-corner-top-right={corner.id === 'top-right'}
+					class:resize-corner-bottom-left={corner.id === 'bottom-left'}
+					class:resize-corner-bottom-right={corner.id === 'bottom-right'}
+					aria-label={corner.side === 'left'
+						? strings.extension.media.resizeLeft
+						: strings.extension.media.resizeRight}
+					onmousedown={(event: MouseEvent) => startResize(event, corner.side)}
+					ontouchstart={(event: TouchEvent) => startResize(event, corner.side)}
+				>
+					<span class="resize-corner-grip"></span>
+				</button>
+			{/each}
 
-			<div
-				role="button"
-				tabindex="0"
-				aria-label={strings.extension.media.back}
-				class="resize-handle resize-handle-right"
-				onmousedown={(event: MouseEvent) => {
-					handleResizingPosition(event, 'right');
-				}}
-				ontouchstart={(event: TouchEvent) => {
-					handleTouchStart(event, 'right');
-				}}
-			>
-				<div class="resize-bar"></div>
-			</div>
 			<div class={cn('media-toolbar', openedMore && 'opened')}>
 				<button
 					class="edra-btn edra-btn-ghost edra-btn-icon-xs {node.attrs.align === 'left'
@@ -277,36 +409,43 @@
 </NodeViewWrapper>
 
 <style>
-	.media-extended-wrapper {
+	:global(.media-extended-outer) {
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		border-radius: var(--edra-radius-md);
 		margin-top: 1rem;
 		margin-bottom: 1rem;
-		border: 1px solid transparent;
 	}
-	.media-extended-wrapper.selected {
-		box-shadow: 0 0 0 1px var(--edra-link);
-	}
-	.media-extended-wrapper.align-left {
+	:global(.media-extended-outer.align-left) {
 		left: 0;
 		transform: translateX(0);
 	}
-	.media-extended-wrapper.align-center {
+	:global(.media-extended-outer.align-center) {
 		left: 50%;
 		transform: translateX(-50%);
 	}
-	.media-extended-wrapper.align-right {
+	:global(.media-extended-outer.align-right) {
 		left: 100%;
 		transform: translateX(-100%);
 	}
+
 	.media-group {
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		border-radius: var(--edra-radius-md);
+		border-radius: var(--edra-radius-md, 6px);
+		border: 2px solid transparent;
+		outline: none;
+		transition: border-color 120ms ease, box-shadow 120ms ease;
 	}
+	.media-group.selected {
+		border-color: var(--edra-link, #3b82f6);
+		box-shadow: 0 0 0 1px var(--edra-link, #3b82f6);
+	}
+	.media-group.resizing {
+		user-select: none;
+	}
+
 	.media-title-input {
 		color: var(--edra-body);
 		margin-top: 0.25rem;
@@ -322,38 +461,55 @@
 	.media-title-input:focus {
 		border-bottom-color: var(--edra-border);
 	}
-	.resize-handle {
+
+	.resize-corner {
 		position: absolute;
+		z-index: 30;
+		width: 14px;
+		height: 14px;
+		padding: 0;
+		border: none;
+		background: transparent;
 		display: flex;
-		top: 0;
-		bottom: 0;
-		z-index: 20;
-		width: 1.25rem;
-		cursor: col-resize;
 		align-items: center;
-		padding: 0.5rem;
+		justify-content: center;
+		pointer-events: auto;
 	}
-	.resize-handle-left {
-		left: 0;
-		justify-content: flex-start;
+	.resize-corner-top-left {
+		top: -7px;
+		left: -7px;
+		cursor: nwse-resize;
 	}
-	.resize-handle-right {
-		right: 0;
-		justify-content: flex-end;
+	.resize-corner-top-right {
+		top: -7px;
+		right: -7px;
+		cursor: nesw-resize;
 	}
-	.resize-bar {
-		background-color: var(--edra-canvas-soft-2);
-		z-index: 20;
-		height: 4rem;
-		width: 4px;
-		border-radius: var(--edra-radius-pill);
-		border: 1px solid var(--edra-border);
-		opacity: 0;
-		transition: opacity 150ms ease;
+	.resize-corner-bottom-left {
+		bottom: -7px;
+		left: -7px;
+		cursor: nesw-resize;
 	}
-	.media-group:hover .resize-bar {
-		opacity: 1;
+	.resize-corner-bottom-right {
+		bottom: -7px;
+		right: -7px;
+		cursor: nwse-resize;
 	}
+	.resize-corner-grip {
+		display: block;
+		width: 10px;
+		height: 10px;
+		border-radius: 2px;
+		background-color: var(--edra-canvas, #fff);
+		border: 2px solid var(--edra-link, #3b82f6);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+	}
+	.resize-corner:hover .resize-corner-grip,
+	.resize-corner:focus-visible .resize-corner-grip {
+		background-color: var(--edra-link, #3b82f6);
+		transform: scale(1.1);
+	}
+
 	.media-toolbar {
 		position: absolute;
 		display: flex;
@@ -363,16 +519,11 @@
 		padding: 4px;
 		background-color: var(--edra-canvas);
 		top: -0.5rem;
-		left: calc(50% - 3.5rem);
+		left: 50%;
+		transform: translate(-50%, -100%);
 		z-index: 20;
 		border-radius: var(--edra-radius-md);
 		box-shadow: var(--edra-shadow-3);
-		opacity: 0;
-		transition: opacity 150ms ease;
-	}
-	.media-group:hover .media-toolbar,
-	.media-toolbar.opened {
-		opacity: 1;
 	}
 	.media-align-active {
 		background-color: var(--edra-canvas-soft-2) !important;

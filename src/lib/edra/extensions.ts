@@ -8,12 +8,19 @@ import Typography from '@tiptap/extension-typography';
 import Subscript from '@tiptap/extension-subscript';
 import TextAlign from '@tiptap/extension-text-align';
 import SuperScript from '@tiptap/extension-superscript';
-import { ColorHighlighter, Table, TableCell, TableHeader, TableRow } from './tiptap/index.ts';
+import {
+	Audio,
+	ColorHighlighter,
+	SelectAcrossAtoms,
+	Table,
+	TableCell,
+	TableHeader,
+	TableRow
+} from './tiptap/index.ts';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Markdown } from '@tiptap/markdown';
 import { BlockMath, InlineMath } from '@tiptap/extension-mathematics';
 import katex from 'katex';
-import { Audio } from './tiptap/index.ts';
 
 /** 解析/渲染前解码 data-latex 中的 HTML 实体（如 &amp;），否则 KaTeX 渲染 align 等会报错 */
 function decodeLatexFromHtml(v: string | null | undefined): string {
@@ -171,7 +178,8 @@ export const baseExtensions = [
 	TableHeader,
 	TableRow,
 	TableCell,
-	Markdown
+	Markdown,
+	SelectAcrossAtoms
 ] as Extensions;
 
 /**

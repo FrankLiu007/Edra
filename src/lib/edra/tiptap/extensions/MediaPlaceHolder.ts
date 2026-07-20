@@ -3,9 +3,12 @@ import { SvelteNodeViewRenderer } from '../index.ts';
 import type { Component } from 'svelte';
 import { NodeSelection } from '@tiptap/pm/state';
 
+/** URL string, or attrs object (must include `src`) for setImage / setVideo / setAudio */
+export type MediaUploadResult = string | ({ src: string } & Record<string, unknown>);
+
 export interface MediaPlaceholderOptions {
 	HTMLAttributes: Record<string, unknown>;
-	onUpload?: (file: File) => Promise<string>;
+	onUpload?: (file: File) => Promise<MediaUploadResult>;
 }
 
 declare module '@tiptap/core' {
@@ -32,7 +35,7 @@ declare module '@tiptap/core' {
 
 	interface Storage {
 		mediaPlaceholder: {
-			onUpload?: (file: File) => Promise<string>;
+			onUpload?: (file: File) => Promise<MediaUploadResult>;
 		};
 	}
 }
@@ -131,14 +134,19 @@ export const MediaPlaceholder = (component: Component<NodeViewProps>) =>
 						}
 
 						void onUpload(file)
-							.then((src) => {
+							.then((result) => {
+								const attrs = typeof result === 'string' ? { src: result } : result;
+								if (!attrs?.src) {
+									console.error('Failed to upload media: result missing src');
+									return;
+								}
 								editor.view.focus();
 								if (mediaType === 'audio') {
-									editor.commands.setAudio({ src });
+									editor.commands.setAudio({ src: attrs.src });
 								} else if (mediaType === 'video') {
-									editor.commands.setVideo({ src });
+									editor.commands.setVideo({ src: attrs.src });
 								} else {
-									editor.commands.setImage({ src });
+									editor.commands.setImage(attrs);
 								}
 							})
 							.catch((error) => {

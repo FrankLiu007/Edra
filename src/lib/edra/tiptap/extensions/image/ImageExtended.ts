@@ -16,6 +16,20 @@ function isLocalFileSrc(src: string | null | undefined): boolean {
 
 export const ImageExtended = (component: Component<NodeViewProps>): Node<ImageOptions, unknown> => {
 	return Image.extend({
+		atom: true,
+		selectable: true,
+		draggable: true,
+		parseHTML() {
+			return [
+				{
+					tag: this.options.allowBase64 ? 'img[src]' : 'img[src]:not([src^="data:"])'
+				},
+				// 剪贴板常剥掉 blob: src，仅剩 data-image-id — 仍需解析为 image 节点
+				{
+					tag: 'img[data-image-id]'
+				}
+			];
+		},
 		addAttributes() {
 			return {
 				src: {
@@ -39,6 +53,15 @@ export const ImageExtended = (component: Component<NodeViewProps>): Node<ImageOp
 				},
 				align: {
 					default: 'left'
+				},
+				/** ChatPro 笔记持久化引用（指向 NoteImage 记录） */
+				'data-image-id': {
+					default: null,
+					parseHTML: (element) => element.getAttribute('data-image-id'),
+					renderHTML: (attributes) => {
+						if (!attributes['data-image-id']) return {};
+						return { 'data-image-id': attributes['data-image-id'] };
+					}
 				}
 			};
 		},
