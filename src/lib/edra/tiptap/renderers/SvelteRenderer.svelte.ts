@@ -1,7 +1,8 @@
 import { mount, unmount, type Component } from 'svelte';
 
 export interface SvelteRendererOptions {
-	props?: Record<string, unknown>;
+	/** Suggestion / node-view props are plain objects without an index signature. */
+	props?: object;
 }
 
 export class SvelteRenderer {
@@ -20,7 +21,7 @@ export class SvelteRenderer {
 	constructor(component: Component, { props = {} }: SvelteRendererOptions = {}) {
 		this.component = component;
 		this.container = document.createElement('div');
-		Object.assign(this.store, props);
+		Object.assign(this.store, props as Record<string, unknown>);
 		this.mountComponent();
 	}
 

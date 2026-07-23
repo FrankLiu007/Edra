@@ -219,7 +219,7 @@ class SvelteNodeView extends NodeView<Component, Editor, SvelteNodeViewRendererO
 }
 
 export function SvelteNodeViewRenderer(
-	component: Component,
+	component: Component<any>,
 	options?: Partial<SvelteNodeViewRendererOptions>
 ): NodeViewRenderer {
 	return (props) => {
