@@ -496,7 +496,7 @@
 		scrollTarget: editor.view.dom.parentElement ?? window,
 		onShow() {
 			activeOptionIndex = 0;
-			inputTag?.focus();
+			inputTag?.focus({ preventScroll: true });
 		},
 		onHide() {
 			inputTag?.blur();
@@ -611,6 +611,7 @@
 		border-radius: var(--edra-radius-sm);
 	}
 	:global(.ai-bubble-container) {
+		position: absolute;
 		background-color: var(--edra-canvas);
 		max-height: 30rem;
 		max-width: 48rem;
