@@ -27,7 +27,11 @@ export interface SvelteNodeViewRendererOptions extends NodeViewRendererOptions {
 		| null;
 }
 
-class SvelteNodeView extends NodeView<Component, Editor, SvelteNodeViewRendererOptions> {
+class SvelteNodeView extends NodeView<
+	Component<NodeViewProps>,
+	Editor,
+	SvelteNodeViewRendererOptions
+> {
 	declare renderer: SvelteRenderer;
 
 	declare decorationClasses: string;

@@ -1,7 +1,8 @@
 import { mount, unmount, type Component } from 'svelte';
 
 export interface SvelteRendererOptions {
-	props?: Record<string, unknown>;
+	// SuggestionProps 等无 index signature 的对象也需可传入
+	props?: Record<string, any>;
 }
 
 export class SvelteRenderer {

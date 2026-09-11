@@ -182,7 +182,7 @@ export const TableCell = Node.create<TableCellOptions>({
 			new Plugin({
 				props: {
 					handleDOMEvents: {
-						mousemove: (view, event) => {
+						mousemove: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -202,7 +202,7 @@ export const TableCell = Node.create<TableCellOptions>({
 							}
 							return false;
 						},
-						focusin: (view, event) => {
+						focusin: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -221,7 +221,7 @@ export const TableCell = Node.create<TableCellOptions>({
 							}
 							return false;
 						},
-						mousedown: (view, event) => {
+						mousedown: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -240,7 +240,7 @@ export const TableCell = Node.create<TableCellOptions>({
 							}
 							return false;
 						},
-						mouseleave: (view, event) => {
+						mouseleave: (_view, event) => {
 							const table = (event.target as HTMLElement).closest('table');
 							if (!table) return false;
 							const grips = table.querySelectorAll<HTMLAnchorElement>('a.grip-row');
@@ -249,7 +249,7 @@ export const TableCell = Node.create<TableCellOptions>({
 							if (wrapper) wrapper.classList.remove('last-row-hover');
 							return false;
 						},
-						mouseout: (view, event) => {
+						mouseout: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const table = target.closest('table');
 							const to = (event as MouseEvent).relatedTarget as HTMLElement | null;
@@ -262,7 +262,7 @@ export const TableCell = Node.create<TableCellOptions>({
 							}
 							return false;
 						},
-						touchstart: (view, event) => {
+						touchstart: (_view, event) => {
 							const target = (event as TouchEvent).target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -281,7 +281,7 @@ export const TableCell = Node.create<TableCellOptions>({
 							}
 							return false;
 						},
-						touchmove: (view, event) => {
+						touchmove: (_view, event) => {
 							const target = (event as TouchEvent).target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');

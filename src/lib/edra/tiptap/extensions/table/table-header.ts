@@ -115,7 +115,7 @@ export const TableHeader = TiptapTableHeader.extend({
 			new Plugin({
 				props: {
 					handleDOMEvents: {
-						mousemove: (view, event) => {
+						mousemove: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -134,7 +134,7 @@ export const TableHeader = TiptapTableHeader.extend({
 							}
 							return false;
 						},
-						focusin: (view, event) => {
+						focusin: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -153,7 +153,7 @@ export const TableHeader = TiptapTableHeader.extend({
 							}
 							return false;
 						},
-						mousedown: (view, event) => {
+						mousedown: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -172,7 +172,7 @@ export const TableHeader = TiptapTableHeader.extend({
 							}
 							return false;
 						},
-						mouseleave: (view, event) => {
+						mouseleave: (_view, event) => {
 							const table = (event.target as HTMLElement).closest('table');
 							if (!table) return false;
 							const grips = table.querySelectorAll<HTMLAnchorElement>('a.grip-column');
@@ -181,7 +181,7 @@ export const TableHeader = TiptapTableHeader.extend({
 							if (wrapper) wrapper.classList.remove('last-column-hover');
 							return false;
 						},
-						mouseout: (view, event) => {
+						mouseout: (_view, event) => {
 							const target = event.target as HTMLElement;
 							const table = target.closest('table');
 							const to = (event as MouseEvent).relatedTarget as HTMLElement | null;
@@ -194,7 +194,7 @@ export const TableHeader = TiptapTableHeader.extend({
 							}
 							return false;
 						},
-						touchstart: (view, event) => {
+						touchstart: (_view, event) => {
 							const target = (event as TouchEvent).target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
@@ -213,7 +213,7 @@ export const TableHeader = TiptapTableHeader.extend({
 							}
 							return false;
 						},
-						touchmove: (view, event) => {
+						touchmove: (_view, event) => {
 							const target = (event as TouchEvent).target as HTMLElement;
 							const cell = target.closest('td, th');
 							const table = target.closest('table');
